@@ -1,0 +1,16 @@
+certifi
+charset-normalizer
+greenlet
+idna
+numpy
+pandas
+psycopg2-binary
+python-dateutil
+python-decouple
+pytz
+requests
+six
+sqlalchemy
+typing-extensions
+tzdata
+urllib3
