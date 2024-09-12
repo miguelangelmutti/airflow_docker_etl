@@ -1,0 +1,7 @@
+{
+    "categorias": "[{'categoria':'museos','url': 'data_url_museos'},\r\n {'categoria':'bibliotecas','url':'data_url_bibliotecas'},\r\n {'categoria':'cines','url':'data_url_cines'}\r\n ]",
+    "data_path": "/opt/airflow/data/",
+    "data_url_bibliotecas": "https://datos.cultura.gob.ar/dataset/37305de4-3cce-4d4b-9d9a-fec3ca61d09f/resource/01c6c048-dbeb-44e0-8efa-6944f73715d7/download/11_bibliotecapopular-datos-abiertos.csv",
+    "data_url_cines": "https://datos.cultura.gob.ar/dataset/37305de4-3cce-4d4b-9d9a-fec3ca61d09f/resource/f7a8edb8-9208-41b0-8f19-d72811dcea97/download/salas_cine.csv",
+    "data_url_museos": "https://datos.cultura.gob.ar/dataset/37305de4-3cce-4d4b-9d9a-fec3ca61d09f/resource/4207def0-2ff7-41d5-9095-d42ae8207a5d/download/museos_datosabiertos.csv"
+}
