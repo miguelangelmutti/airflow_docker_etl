@@ -80,6 +80,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
+    - ${AIRFLOW_PROJ_DIR:-.}/variables.json:/opt/airflow/variables.json
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -129,7 +130,13 @@ services:
 
   airflow-webserver:
     <<: *airflow-common
-    command: webserver
+    #command: webserver
+    command:
+    - bash
+    - -c
+    - |
+      airflow variables import /opt/airflow/variables.json  # Importar variables
+      airflow webserver  # Iniciar el webserver normalmente
     ports:
       - "8080:8080"
     healthcheck:
@@ -245,9 +252,9 @@ services:
           echo "Please follow the instructions to increase amount of resources available:"
           echo "   https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#before-you-begin"
           echo
-        fi
+        fi        
         mkdir -p /sources/logs /sources/dags /sources/plugins
-        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
+        chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}        
         exec /entrypoint airflow version
     # yamllint enable rule:line-length
     environment:
