@@ -113,7 +113,7 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_DB=postgres
     volumes:
-      - data-db-volume:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change
     # https://redis.io/blog/redis-adopts-dual-source-available-licensing/
