@@ -59,11 +59,11 @@ with DAG(
 
     start = DummyOperator(task_id='inicio')
 
-    get_archivo_museo = PythonOperator(
+    get_archivos_categorias = PythonOperator(
         task_id='get_archivos_categorias',
         python_callable=descargar_archivo
     )
 
     fin = DummyOperator(task_id='fin')
 
-    start >> get_archivo_museo >> fin
+    start >> get_archivos_categorias >> fin
