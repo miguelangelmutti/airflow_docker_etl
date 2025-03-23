@@ -12,17 +12,19 @@ CREATE TABLE public.espacios_culturales (
     telefono character varying(200), 
     mail character varying(200), 
     web character varying(200), 
-    creado timestamp without time zone
+    creado date
 );
 
 CREATE TABLE public.cines(
 provincia character varying(200),
 cant_pantallas integer, 
 cant_butacas integer, 
-cant_espacios_incaa integer
+cant_espacios_incaa integer,
+creado date
 );
 
 CREATE TABLE public.indicadores(
 descripcion character varying(200),
-Cant_registros integer
+Cant_registros integer,
+creado date
 );
