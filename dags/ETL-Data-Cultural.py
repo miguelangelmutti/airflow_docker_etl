@@ -26,42 +26,21 @@ log = logging.getLogger(__name__)
 PATH_TO_PYTHON_BINARY = sys.executable
 
 
-def get_ruta_al_archivo(categoria):
-    fecha = datetime.datetime.now()
-    ruta = Variable.get("data_path") #/opt/airflow/data/
-    dia = fecha.day
-    mes = fecha.month
-    anio = fecha.year
-    template = '{ruta}/{categoria}/{anio}-{mes}/{categoria}-{dia}-{mes}-{anio}.csv'
-    ruta_al_archivo_str = template.format(ruta = ruta, categoria=categoria, anio=anio,mes=mes, dia=dia)
-    ruta_al_archivo = Path(ruta_al_archivo_str)
-    return ruta_al_archivo
 
-
-def descargar_archivo():
-    
-    categorias = eval(Variable.get("categorias"))
-
-    for categoria in categorias:
-        url = Variable.get(categoria['url'])
-        respuesta = requests.get(url)
-        ruta_al_archivo = get_ruta_al_archivo((categoria['categoria']))
-        ruta_al_archivo.parent.mkdir(parents=True, exist_ok=True)               
-        with open(ruta_al_archivo, "wb") as archivo:
-            archivo.write(respuesta.content)        
-        log.info('archivo guardado en '+ str(ruta_al_archivo))
-
-
+def define_fecha(**context):
+    ParamsDict = context["params"]
+    log.info('fecha_a_procesar: ' + ParamsDict['fecha_a_procesar'])
+    fecha_a_procesar_str = ParamsDict['fecha_a_procesar']
+    if fecha_a_procesar_str == None:
+        #datetime.datetime.strptime('2014-12-04', '%Y-%m-%d').date()
+        fecha_a_procesar_str = ahora
+    return fecha_a_procesar_str
 
 
 
 def purge_last_data_of_the_day(**context):
-    ParamsDict = context["params"]
-    fecha_a_procesar_str = ParamsDict['fecha_a_procesar']
-    #log.info('fecha_a_procesar: ' + ParamsDict['fecha_a_procesar'])
-    if fecha_a_procesar_str == None:
-        #datetime.datetime.strptime('2014-12-04', '%Y-%m-%d').date()
-        fecha_a_procesar_str = ahora
+
+    fecha_a_procesar_str = define_fecha(**context)
 
     hook = PostgresHook('data_db')
     #ahora = datetime.datetime.today().strftime('%Y-%m-%d') 
@@ -71,93 +50,100 @@ def purge_last_data_of_the_day(**context):
     cmd3 = f"DELETE FROM public.indicadores WHERE creado = '{fecha_a_procesar_str}'"
     hook.run(cmd)
     hook.run(cmd2)
+    hook.run(cmd3)
 
 
-def get_last_files_path(**context):
-    ParamsDict = context["params"]
-    log.info('fecha_a_procesar: ' + ParamsDict['fecha_a_procesar'])
-    fecha_a_procesar_str = ParamsDict['fecha_a_procesar']
-    if fecha_a_procesar_str == None:
-        #datetime.datetime.strptime('2014-12-04', '%Y-%m-%d').date()
-        fecha_a_procesar_str = ahora
+def get_last_data_from_db(**context):
+    hook = PostgresHook('data_db')   
+    pg_uri = hook.get_uri()
+    engine = create_engine(pg_uri)
 
-    ruta = Variable.get("data_path")
+    fecha_a_procesar_str = define_fecha(**context)
+    
     categorias = eval(Variable.get("categorias"))    
     data = []
-    files_path = []
+    db_fechas = []
     
     for categoria_data in categorias:
         categoria = categoria_data['categoria']
-        rutas_categoria = os.path.join(ruta,categoria)
-        for subdir,dir,files in os.walk(rutas_categoria):
-            for file in files:
-                if file.endswith('csv'):
-                    fecha = os.path.getmtime(os.path.join(subdir,file))
-                    dt = datetime.datetime.fromtimestamp(fecha).strftime('%Y-%m-%d')
-                    data.append({'categoria':categoria, 'archivo':file,'ruta':os.path.join(subdir, file), 'fecha_modif': dt})
-
-    df = pd.DataFrame.from_dict(data)
+        df = pd.read_sql_table(table_name=f"raw_{categoria}", con=engine)
+        fechas = df['creado'].dt.strftime('%Y-%m-%d').unique().tolist()
+        data.append({'categoria':categoria,  'fechas': fechas})
+    filas = []
+    for categoria_data in data:        
+        for fecha in categoria_data["fechas"]:
+            filas.append({"categoria": categoria_data["categoria"], "fecha": fecha})
+    df = pd.DataFrame(filas)
     log.info(df)
-    df = df.query(f"fecha_modif <='{fecha_a_procesar_str}'")
-    series_max_fecha_modif = df.groupby('categoria')['fecha_modif'].max()
+    df = df.query(f"fecha <='{fecha_a_procesar_str}'")
+    series_max_fecha_modif = df.groupby('categoria')['fecha'].max()
     log.info('series_max_fecha_modif')
     log.info(series_max_fecha_modif)
     df_max_fecha_modif = pd.DataFrame(series_max_fecha_modif)
-    df_max_fecha_modif = df_max_fecha_modif.rename(columns={'fecha_modif':'fecha_modif_max'})
+    df_max_fecha_modif = df_max_fecha_modif.rename(columns={'fecha':'fecha_max'})
 
     # Unir los DataFrames por la columna 'categoria'
     df_unido = df.merge(df_max_fecha_modif, on='categoria', how='inner')
 
     # Filtrar por la fecha máxima
-    df_filtrado = df_unido[df_unido['fecha_modif'] == df_unido['fecha_modif_max']]
+    df_filtrado = df_unido[df_unido['fecha'] == df_unido['fecha_max']]
 
     # Visualizar el resultado
     for ind in df_filtrado.index:
-        files_path.append({'categoria':df_filtrado['categoria'][ind] ,'ruta':df_filtrado['ruta'][ind]})
+        db_fechas.append({'categoria':df_filtrado['categoria'][ind] , 'fecha':df_filtrado['fecha'][ind]})
     
+    log.info(db_fechas)
+
     ti = context["task_instance"]
-    ti.xcom_push(key='fechas', value=files_path)
+    ti.xcom_push(key='db_fechas', value=db_fechas)
 
 def load_to_db_from_last_files(**context):
-    ti = context["task_instance"]
-    hook = PostgresHook('data_db')
-    files_path = ti.xcom_pull(task_ids='get_last_files_path', key='fechas')        
+    ti = context["task_instance"]    
+    categorias_data = ti.xcom_pull(task_ids='get_last_data', key='db_fechas') 
+    
+    hook = PostgresHook('data_db')       
     pg_uri = hook.get_uri()
     engine = create_engine(pg_uri)
 
 
-    ParamsDict = context["params"]
-    log.info('fecha_a_procesar: ' + ParamsDict['fecha_a_procesar'])
-    fecha_a_procesar_str = ParamsDict['fecha_a_procesar']
-    if fecha_a_procesar_str == None:
-        #datetime.datetime.strptime('2014-12-04', '%Y-%m-%d').date()
-        fecha_a_procesar_str = ahora    
+    fecha_a_procesar_str = define_fecha(**context)
 
-    for path in files_path:        
-        if path['categoria'] in ('bibliotecas','museos'):
-            if path['categoria'] == 'museos':
+    for categoria in categorias_data:
+        
+        if categoria['categoria'] in ('bibliotecas','museos'):
+            if categoria['categoria'] == 'museos':
                 dict_cast = {'cod_area': 'object'}                        
-                columnas_reemplazo = {"Cod_Loc":'cod_localidad',
-                                                "IdProvincia":'id_provincia',
-                                                "IdDepartamento":'id_departamento',
-                                                "direccion":'domicilio',
-                                                "CP":'cp',
-                                                "Mail":'mail',
-                                                "Web":'web'
+                columnas_reemplazo = {"cod_loc":'cod_localidad',
+                                                "idprovincia":'id_provincia',
+                                                "iddepartamento":'id_departamento',
+                                                "direccion":'domicilio'
                                                 }
-            elif path['categoria'] == 'bibliotecas':
+            elif categoria['categoria'] == 'bibliotecas':
                 dict_cast = {'cod_tel': 'object', 'telefono':'object'}                        
                 columnas_reemplazo = {"cod_tel":'cod_area'}
             else:
                 pass
         else:
-            columnas_seleccionadas_cine = ["cod_localidad","id_provincia","id_departamento","categoria","provincia","localidad","nombre","direccion","cp","web","fuente","sector","pantallas","butacas","espacio_incaa"]                    
+            columnas_seleccionadas_cine = ["cod_localidad","id_provincia","id_departamento","categoria","provincia","localidad","latitud","longitud","nombre","direccion","cp","web","fuente","sector","pantallas","butacas","espacio_incaa"]                    
             columnas_reemplazo = {"direccion":'domicilio'}
-
-        columnas_seleccionadas = ["cod_localidad","id_provincia","id_departamento","categoria","provincia","localidad","nombre","domicilio","cp","telefono","mail","web"]
-        df = pd.read_csv(path['ruta'],dtype=dict_cast)                
+                
+        columnas_seleccionadas = ["cod_localidad","id_provincia","id_departamento","categoria","provincia","localidad","latitud","longitud","nombre","domicilio","cp","telefono","mail","web","creado"]
+        
+        
+        query = f"SELECT * FROM public.raw_{categoria['categoria']} WHERE creado = '{categoria['fecha']}'"
+        
+        #df = pd.read_sql_query(sql=query, con=engine,dtype=dict_cast)
+        df = pd.read_sql_query(sql=query, con=engine)
         df = df.rename(columns= columnas_reemplazo)
-        if path['categoria'] == 'cines':
+
+        log.info(categoria['categoria'])
+        log.info(df.columns)
+
+
+
+        if categoria['categoria'] == 'cines':
+            df['pantallas'] = df['pantallas'].astype(int)
+            df['butacas'] = df['butacas'].astype(int)            
             df['telefono'] = None
             df['mail'] = None
             s_pantallas = df.groupby('provincia')['pantallas'].sum()
@@ -172,8 +158,9 @@ def load_to_db_from_last_files(**context):
         else:
             df['telefono'] = df['cod_area'] + '-' + df['telefono']
             df.drop(['cod_area'], axis=1, inplace=True)
-        df = df[columnas_seleccionadas]
-        df['creado'] = fecha_a_procesar_str #datetime.datetime.today().strftime('%Y-%m-%d')                
+
+                    
+        df = df[columnas_seleccionadas]        
         df.to_sql('espacios_culturales',con=engine, if_exists='append', index=False)
 
     #indicadores
@@ -194,7 +181,7 @@ def load_to_db_from_last_files(**context):
 
 with DAG(
 
-    dag_id="ETL_DATA_ESPACIOS_CULTURALES",
+    dag_id="ETL_ESPACIOS_CULTURALES",
     schedule=None,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
@@ -210,12 +197,9 @@ with DAG(
 
     start = DummyOperator(task_id='inicio')
 
-    get_archivos_categorias = PythonOperator(task_id='get_archivos_categorias',
-                                             python_callable=descargar_archivo
-                                            )
-    
-    get_last_files = PythonOperator(task_id='get_last_files_path',
-                                         python_callable=get_last_files_path)
+
+    get_last_data = PythonOperator(task_id='get_last_data',
+                                         python_callable=get_last_data_from_db)
     
     purge_data = PythonOperator(task_id='purge_last_data_of_the_day',
                                 python_callable=purge_last_data_of_the_day)
@@ -225,4 +209,4 @@ with DAG(
 
     fin = DummyOperator(task_id='fin')
 
-    start >> get_archivos_categorias >> get_last_files >> purge_data >> load_categorias_to_db >> fin
+    start >> get_last_data >> purge_data >> load_categorias_to_db >> fin
