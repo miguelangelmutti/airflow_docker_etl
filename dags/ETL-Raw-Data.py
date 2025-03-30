@@ -73,6 +73,7 @@ def load_raw_data_to_db(**context):
     files_path = ti.xcom_pull(task_ids='get_archivos_categorias', key='categorias_raw_data_files')        
     pg_uri = hook.get_uri()
     engine = create_engine(pg_uri)
+    set_pronvincias = set()
 
     for path in files_path:        
         df = pd.read_csv(path['ruta'], dtype=str)                
@@ -97,8 +98,98 @@ def load_raw_data_to_db(**context):
         log.info(df_to_insert.columns)
         
         # Insertar en la base de datos
-        df_to_insert.to_sql(f"raw_{path['categoria']}", con=engine, if_exists='append', index=False)        
+        df_to_insert.to_sql(f"raw_{path['categoria']}", con=engine, if_exists='append', index=False)
 
+        log.info(f"Se han insertado {len(df_to_insert)} filas en la tabla raw_{path['categoria']}")
+
+        #verificar si la categoria existe en la tabla categorias
+        cmd = f"SELECT 1 FROM public.categorias WHERE descripcion = '{path['categoria']}'"
+        result = hook.get_records(cmd)
+        if not result:
+            #inserto en tabla categorias        
+            cmd = f"INSERT INTO public.categorias (descripcion) VALUES('{path['categoria']}')"
+            hook.run(cmd)
+            log.info(f"Se ha insertado la categoria {path['categoria']} en la tabla categorias")
+        else:
+            log.info(f"La categoria {path['categoria']} ya existe en la tabla categorias")
+        
+        #Leer provincias de la categoria y verificar si existen en la tabla provincias
+        cmd = f"select distinct provincia from raw_{path['categoria']}"
+        result_provincias = hook.get_records(cmd)
+        list_pronvicias = []        
+        for provincia in result_provincias:
+            if provincia[0] == 'Tierra del Fuego, Antártida e Islas del Atlántico Sur':
+                provincia = 'Tierra del Fuego'
+            else:
+                provincia = provincia[0]
+            #quito espacios en blanco al principio y al final
+            provincia = provincia.strip()
+            #agrego a la lista de provincias
+            list_pronvicias.append(provincia)
+        set_pronvincias.update(list_pronvicias)
+        log.info(f"Se han obtenido {len(set_pronvincias)} provincias de la categoria {path['categoria']}")
+        for provincia in set_pronvincias:
+            cmd = f"SELECT 1 FROM public.provincias WHERE lower(descripcion) = lower('{provincia}')"
+            result = hook.get_records(cmd)
+            if not result:
+                #inserto en tabla provincias        
+                cmd = f"INSERT INTO public.provincias (descripcion) VALUES('{provincia}')"
+                hook.run(cmd)
+                log.info(f"Se ha insertado la provincia {provincia} en la tabla provincias")
+            else:
+                log.info(f"La provincia {provincia} ya existe en la tabla provincias")
+      
+        #Leer localidades y provincias de la categoria y verificar si existen en la tabla localidades
+        cmd = f"select distinct localidad,provincia from raw_{path['categoria']}"
+        result_localidades = hook.get_records(cmd)
+        log.info(result_localidades)
+        for localidad, provincia in result_localidades:
+            if localidad and provincia:
+                if provincia == 'Tierra del Fuego, Antártida e Islas del Atlántico Sur':
+                    provincia = 'Tierra del Fuego'
+                #quito espacios en blanco al principio y al final
+                provincia = provincia.strip()
+                #busco el id de la provincia
+                cmd = f"SELECT id FROM public.provincias WHERE lower(descripcion) = lower('{provincia}')"
+                result = hook.get_records(cmd)
+                if result:
+                    id_provincia = result[0][0]
+                    #quito las comillas simples de la localidad, los acentos, algunas abreviaciones y espacios en blanco al principio y al final                    
+                    localidad = localidad.replace("'", "''")\
+                                         .replace("-", " ")\
+                                         .replace("á", "a")\
+                                         .replace("é", "e")\
+                                         .replace("í", "i")\
+                                         .replace("ó", "o")\
+                                         .replace("ú", "u")\
+                                         .replace("Gral.", "General")\
+                                         .replace("Libertador Gral. San Martin","Libertador General San Martin").replace("Libertador G.San Martin","Libertador General San Martin")\
+                                         .replace("El Dorado","Eldorado")\
+                                         .replace("Justo P. Daract","Justo Daract")\
+                                         .replace("Lanus Este","Lanus")\
+                                         .replace("Lanus Oeste","Lanus")\
+                                         .replace("Longchamps oeste","Longchamps")\
+                                         .replace("Padre A Stefanelli","Padre Alejandro Stefenelli")\
+                                         .replace("San Clemente del Tuyu","San Clemente")\
+                                         .replace("Santa Rosa de Conlara","Santa Rosa del Conlara")\
+                                         .replace("Santiago capital","Santiago del Estero")\
+                                         .replace("Tres Lomas - Pellegrini","Tres Lomas")\
+                                         .replace("Vicuña Mackena","Vicuña Mackenna")\
+                                         .strip()
+                    #verifico si la localidad existe en la tabla localidades                
+                    cmd = f"SELECT 1 FROM public.localidades WHERE lower(descripcion) = lower('{localidad}') and id_provincia = {id_provincia}"
+                    result = hook.get_records(cmd)
+                    if not result:
+                        #inserto en tabla localidades        
+                        cmd = f"INSERT INTO public.localidades (descripcion,id_provincia) VALUES('{localidad}',{id_provincia})"
+                        hook.run(cmd)
+                        log.info(f"Se ha insertado la localidad {localidad} en la tabla localidades")
+                    else:
+                        log.info(f"La localidad {localidad} ya existe en la tabla localidades")
+                else:
+                    log.info(f"La provincia {provincia} no existe en la tabla provincias")
+        
+  
 
 with DAG(
 
