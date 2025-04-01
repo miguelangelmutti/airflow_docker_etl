@@ -14,3 +14,4 @@ sqlalchemy
 typing-extensions
 tzdata
 urllib3
+openpyxl

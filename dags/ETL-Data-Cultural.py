@@ -206,6 +206,7 @@ with DAG(
 
     load_categorias_to_db =  PythonOperator(task_id="load_categorias_to_db",
                                             python_callable=load_to_db_from_last_files)
+    
 
     fin = DummyOperator(task_id='fin')
 
