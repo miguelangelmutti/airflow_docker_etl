@@ -103,13 +103,20 @@ def descargar_archivos_culturales(**context):
 def purge_last_data_of_the_day():
     hook = PostgresHook('data_db')
     #ahora = datetime.datetime.today().strftime('%Y-%m-%d') 
-    cmd = f"DELETE FROM public.raw_cines WHERE creado  = '{ahora}'"
-    log.info(cmd)
+    cmd = f"DELETE FROM public.raw_cines WHERE creado  = '{ahora}'"    
     cmd2 = f"DELETE FROM public.raw_museos WHERE creado = '{ahora}'"
-    cmd3 = f"DELETE FROM public.raw_museos WHERE creado = '{ahora}'"
+    cmd3 = f"DELETE FROM public.raw_bibliotecas WHERE creado = '{ahora}'"
+    cmd4 = f"DELETE FROM public.cines WHERE creado  = '{ahora}'"    
+    cmd5 = f"DELETE FROM public.museos WHERE creado = '{ahora}'"
+    cmd6 = f"DELETE FROM public.bibliotecas WHERE creado = '{ahora}'"
+    
     hook.run(cmd)
     hook.run(cmd2)
     hook.run(cmd3)
+    hook.run(cmd4)
+    hook.run(cmd5)
+    hook.run(cmd6)
+
 
 
 def normalizar_localidad(localidad):
@@ -304,7 +311,7 @@ with DAG(
     schedule=None,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
-    tags=["challenge_data"],
+    tags=["challenge_data"]    
 ):
             
 
