@@ -14,8 +14,8 @@ CREATE TABLE public.categorias(
 	descripcion character varying(200)
 	);	
 	
-CREATE TABLE public.espacios_culturales_normalizado(
-    id SERIAL PRIMARY KEY,
+CREATE TABLE public.espacios_culturales(
+	id SERIAL PRIMARY KEY,
     id_localidad integer REFERENCES public.localidades(id), 
     id_categoria  integer REFERENCES public.categorias(id),
     nombre character varying(200) NOT NULL, 
@@ -27,24 +27,7 @@ CREATE TABLE public.espacios_culturales_normalizado(
     mail character varying(200), 
     web character varying(200), 
     creado date
-);	
-
-CREATE TABLE public.espacios_culturales (
-    id SERIAL PRIMARY KEY,
-    cod_localidad integer, 
-    id_provincia integer, 
-    id_departamento integer, 
-    categoria character varying(200) NOT NULL, 
-    provincia character varying(200), 
-    localidad character varying(200), 
-    nombre character varying(200) NOT NULL, 
-    domicilio character varying(200), 
-    cp character varying(200), 
-    telefono character varying(200), 
-    mail character varying(200), 
-    web character varying(200), 
-    creado date
-);
+);		
 
 CREATE TABLE public.cines_indicadores(
 provincia character varying(200),
@@ -54,8 +37,11 @@ cant_espacios_incaa integer,
 creado date
 );
 
+
+
 CREATE TABLE public.indicadores(
-descripcion character varying(200),
+provincia character varying(200),
+categoria character varying(200),
 Cant_registros integer,
 creado date
 );
@@ -73,10 +59,10 @@ CREATE TABLE public.museos(
     id_categoria  integer REFERENCES public.categorias(id),
     id_localidad integer REFERENCES public.localidades(id),     
     nombre	character varying(200),
-    direccion	character varying(200),
+    domicilio	character varying(200),
     piso	character varying(200),
     CP	character varying(200),
-    cod_area character varying(200),
+    cod_tel character varying(200),
     telefono character varying(200),
     Mail character varying(200),
     Web	character varying(200),
@@ -90,16 +76,20 @@ CREATE TABLE public.museos(
     actualizacion character varying(200),
     creado date
     );
+   
 
-    CREATE TABLE public.cines(
+CREATE TABLE public.cines(
     id SERIAL PRIMARY KEY,
     id_categoria  integer REFERENCES public.categorias(id),
     id_localidad integer REFERENCES public.localidades(id),     
     nombre	character varying(200),	
-    direccion	character varying(200),	
+    domicilio	character varying(200),	
     piso	character varying(200),	
     cp	character varying(200),	
-    web	character varying(200),	
+    web	character varying(200),
+    cod_tel character varying(200),
+    telefono character varying(200),
+    mail character varying(200),
     latitud	character varying(200),	
     longitud	character varying(200),	
     tipo_latitud_longitud	character varying(200),	

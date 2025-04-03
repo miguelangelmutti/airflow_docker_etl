@@ -37,22 +37,6 @@ def define_fecha(**context):
     return fecha_a_procesar_str
 
 
-
-def purge_last_data_of_the_day(**context):
-
-    fecha_a_procesar_str = define_fecha(**context)
-
-    hook = PostgresHook('data_db')
-    #ahora = datetime.datetime.today().strftime('%Y-%m-%d') 
-    cmd = f"DELETE FROM public.espacios_culturales WHERE creado  = '{fecha_a_procesar_str}'"
-    log.info(cmd)
-    cmd2 = f"DELETE FROM public.cines WHERE creado = '{fecha_a_procesar_str}'"
-    cmd3 = f"DELETE FROM public.indicadores WHERE creado = '{fecha_a_procesar_str}'"
-    hook.run(cmd)
-    hook.run(cmd2)
-    hook.run(cmd3)
-
-
 def get_last_data_from_db(**context):
     hook = PostgresHook('data_db')   
     pg_uri = hook.get_uri()
@@ -66,7 +50,7 @@ def get_last_data_from_db(**context):
     
     for categoria_data in categorias:
         categoria = categoria_data['categoria']
-        df = pd.read_sql_table(table_name=f"raw_{categoria}", con=engine)
+        df = pd.read_sql_table(table_name=f"{categoria}", con=engine)
         fechas = df['creado'].dt.strftime('%Y-%m-%d').unique().tolist()
         data.append({'categoria':categoria,  'fechas': fechas})
     filas = []
@@ -97,7 +81,20 @@ def get_last_data_from_db(**context):
     ti = context["task_instance"]
     ti.xcom_push(key='db_fechas', value=db_fechas)
 
-def load_to_db_from_last_files(**context):
+def purge_last_data_of_the_day():
+    hook = PostgresHook('data_db')
+    #ahora = datetime.datetime.today().strftime('%Y-%m-%d') 
+    cmd = f"DELETE FROM public.espacios_culturales WHERE creado  = '{ahora}'"    
+    cmd2 = f"DELETE FROM public.cines_indicadores WHERE creado = '{ahora}'"
+    cmd3 = f"DELETE FROM public.indicadores WHERE creado = '{ahora}'"
+    
+    hook.run(cmd)
+    hook.run(cmd2)
+    hook.run(cmd3)
+
+def load_to_db_espacios_culturales(**context):
+    fecha_a_procesar_str = define_fecha(**context)
+    log.info('fecha_a_procesar_str: ' + fecha_a_procesar_str)
     ti = context["task_instance"]    
     categorias_data = ti.xcom_pull(task_ids='get_last_data', key='db_fechas') 
     
@@ -106,65 +103,64 @@ def load_to_db_from_last_files(**context):
     engine = create_engine(pg_uri)
 
 
-    fecha_a_procesar_str = define_fecha(**context)
-
-    for categoria in categorias_data:
-        
-        if categoria['categoria'] in ('bibliotecas','museos'):
-            if categoria['categoria'] == 'museos':
-                dict_cast = {'cod_area': 'object'}                        
-                columnas_reemplazo = {"cod_loc":'cod_localidad',
-                                                "idprovincia":'id_provincia',
-                                                "iddepartamento":'id_departamento',
-                                                "direccion":'domicilio'
-                                                }
-            elif categoria['categoria'] == 'bibliotecas':
-                dict_cast = {'cod_tel': 'object', 'telefono':'object'}                        
-                columnas_reemplazo = {"cod_tel":'cod_area'}
-            else:
-                pass
-        else:
-            columnas_seleccionadas_cine = ["cod_localidad","id_provincia","id_departamento","categoria","provincia","localidad","latitud","longitud","nombre","direccion","cp","web","fuente","sector","pantallas","butacas","espacio_incaa"]                    
-            columnas_reemplazo = {"direccion":'domicilio'}
-                
-        columnas_seleccionadas = ["cod_localidad","id_provincia","id_departamento","categoria","provincia","localidad","latitud","longitud","nombre","domicilio","cp","telefono","mail","web","creado"]
-        
-        
-        query = f"SELECT * FROM public.raw_{categoria['categoria']} WHERE creado = '{categoria['fecha']}'"
-        
-        #df = pd.read_sql_query(sql=query, con=engine,dtype=dict_cast)
-        df = pd.read_sql_query(sql=query, con=engine)
-        df = df.rename(columns= columnas_reemplazo)
-
-        log.info(categoria['categoria'])
-        log.info(df.columns)
-
-
-
-        if categoria['categoria'] == 'cines':
-            df['pantallas'] = df['pantallas'].astype(int)
-            df['butacas'] = df['butacas'].astype(int)            
-            df['telefono'] = None
-            df['mail'] = None
-            s_pantallas = df.groupby('provincia')['pantallas'].sum()
-            s_butacas = df.groupby('provincia')['butacas'].sum()
-            s_espacios_incaa = df.groupby('provincia')['espacio_incaa'].value_counts().unstack(fill_value=0)['Si']
-            df_cines = pd.DataFrame({'provincia': s_pantallas.index.tolist(),
-                                     'cant_pantallas':s_pantallas,
-                                     'cant_butacas':s_butacas,
-                                     'cant_espacios_incaa':s_espacios_incaa,
-                                     'creado': fecha_a_procesar_str}).reset_index(drop=True)            
-            df_cines.to_sql('cines',con=engine, if_exists='append', index=False)
-        else:
-            df['telefono'] = df['cod_area'] + '-' + df['telefono']
-            df.drop(['cod_area'], axis=1, inplace=True)
-
-                    
-        df = df[columnas_seleccionadas]        
+    for categoria in categorias_data:                
+        query = f"SELECT id_localidad,	id_categoria,	nombre,	domicilio,	cp,	latitud,	longitud, mail,	web, '{fecha_a_procesar_str}' as	creado FROM public.{categoria['categoria']} WHERE creado = '{categoria['fecha']}'"    
+        df = pd.read_sql_query(sql=query, con=engine)        
+        log.info(categoria['categoria'])        
         df.to_sql('espacios_culturales',con=engine, if_exists='append', index=False)
 
+
+
+def insights_cines(**context):
+    fecha_a_procesar_str = define_fecha(**context)   
+    
+    ti = context["task_instance"]
+    db_fechas = ti.xcom_pull(task_ids='get_last_data', key='db_fechas')
+    for d in db_fechas:
+        if d['categoria'] == 'cines':              
+            fecha_cine =  d['fecha']
+
+    hook = PostgresHook('data_db')       
+    pg_uri = hook.get_uri()
+    engine = create_engine(pg_uri)
+    
+    
+    query = f"""select p.descripcion as provincia, nombre, domicilio, piso, cp, web, cod_tel, telefono, mail, latitud, longitud, tipo_latitud_longitud, fuente, sector, pantallas, butacas, tipo_de_gestion, espacio_incaa, anio_actualizacion, creado
+                from public.cines ec   
+                join localidades l on ec.id_localidad = l.id
+                join provincias p  on l.id_provincia = p.id 
+                where ec.creado = '{fecha_cine}'
+            """
+
+    df = pd.read_sql_query(query, con=engine)
+    df['pantallas'] = df['pantallas'].astype(int)
+    df['butacas'] = df['butacas'].astype(int)            
+    s_pantallas = df.groupby('provincia')['pantallas'].sum()
+    s_butacas = df.groupby('provincia')['butacas'].sum()
+    s_espacios_incaa = df.groupby('provincia')['espacio_incaa'].value_counts().unstack(fill_value=0)['Si']
+    df_cines = pd.DataFrame({'provincia': s_pantallas.index.tolist(),
+                                'cant_pantallas':s_pantallas,
+                                'cant_butacas':s_butacas,
+                                'cant_espacios_incaa':s_espacios_incaa,
+                                'creado': fecha_a_procesar_str}).reset_index(drop=True)            
+    df_cines.to_sql('cines_indicadores',con=engine, if_exists='append', index=False)
+
+                    
+
+def indicadores(**context):
+    fecha_a_procesar_str = define_fecha(**context)
+    hook = PostgresHook('data_db')       
+    pg_uri = hook.get_uri()
+    engine = create_engine(pg_uri) 
+
+    query = f"""select p.descripcion as provincia, c.descripcion as categoria, ec.id 
+                       from public.espacios_culturales ec join categorias c  on ec.id_categoria = c.id
+	 				   join localidades l on ec.id_localidad = l.id
+                       join provincias p  on l.id_provincia = p.id
+                       where ec.creado = '{fecha_a_procesar_str}'"""
+    log.info(query)
     #indicadores
-    df = pd.read_sql_table(table_name='espacios_culturales', con=engine)
+    df = pd.read_sql_query(sql=query, con=engine)   
     s1 = df.groupby('categoria')['categoria'].count()
     s2 = df.groupby(['categoria','provincia'])['categoria'].count()    
     s3 = pd.concat([s1, s2])    
@@ -176,7 +172,14 @@ def load_to_db_from_last_files(**context):
     df_indicadores = pd.DataFrame({'descripcion': s3.index.tolist(),
                     'cant_registros':s3},
                     ).reset_index(drop=True)
+    
+
+    df_indicadores['categoria'] = df_indicadores['descripcion'].str.split(',').str[0]
+    df_indicadores['provincia'] = df_indicadores['descripcion'].str.split(',').str[1]
+    df_indicadores.drop('descripcion', axis=1, inplace=True)
     df_indicadores['creado'] = fecha_a_procesar_str #datetime.datetime.today().strftime('%Y-%m-%d')
+    log.info(df_indicadores.columns)
+    log.info(df_indicadores.head(10))    
     df_indicadores.to_sql('indicadores',con=engine, if_exists='append', index=False)
 
 with DAG(
@@ -200,14 +203,21 @@ with DAG(
 
     get_last_data = PythonOperator(task_id='get_last_data',
                                          python_callable=get_last_data_from_db)
-    
-    purge_data = PythonOperator(task_id='purge_last_data_of_the_day',
-                                python_callable=purge_last_data_of_the_day)
 
-    load_categorias_to_db =  PythonOperator(task_id="load_categorias_to_db",
-                                            python_callable=load_to_db_from_last_files)
+    purge_data_cultural = PythonOperator(task_id='purge_data_cultural',
+                                         python_callable=purge_last_data_of_the_day)        
+
+    load_espacios_culturales_to_db =  PythonOperator(task_id="load_categorias_to_db",
+                                            python_callable=load_to_db_espacios_culturales)
     
+    load_indicadores_cines_to_db =  PythonOperator(task_id="load_indicadores_cines_to_db",
+                                            python_callable=insights_cines)
+
+    load_indicadores_to_db =  PythonOperator(task_id="load_indicadores_to_db",
+                                            python_callable=indicadores)
+
 
     fin = DummyOperator(task_id='fin')
 
-    start >> get_last_data >> purge_data >> load_categorias_to_db >> fin
+    start >> get_last_data >> purge_data_cultural >> load_espacios_culturales_to_db >> load_indicadores_cines_to_db >> load_indicadores_to_db >> fin
+

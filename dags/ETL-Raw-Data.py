@@ -108,7 +108,7 @@ def purge_last_data_of_the_day():
     cmd3 = f"DELETE FROM public.raw_bibliotecas WHERE creado = '{ahora}'"
     cmd4 = f"DELETE FROM public.cines WHERE creado  = '{ahora}'"    
     cmd5 = f"DELETE FROM public.museos WHERE creado = '{ahora}'"
-    cmd6 = f"DELETE FROM public.bibliotecas WHERE creado = '{ahora}'"
+    cmd6 = f"DELETE FROM public.bibliotecas WHERE creado = '{ahora}'"    
     
     hook.run(cmd)
     hook.run(cmd2)
@@ -285,13 +285,22 @@ def normalizar_categorias_censo():
 
         if categoria['categoria'] == 'cines':
             df = df.drop(["cod_localidad","id_departamento","categoria","provincia","departamento","localidad"], axis=1)
-            columnas_reemplazo = {"direccion":'domicilio'}
-            df.rename(columns= columnas_reemplazo)                                 
-        elif categoria['categoria'] == 'museos':
-            df = df.drop(['cod_loc','idprovincia','iddepartamento','observaciones','categoria','subcategoria','provincia','localidad'], axis=1)             
-        elif categoria['categoria'] == 'bibliotecas':
+            df['cod_tel'] = None
+            df['telefono'] = None
+            df['mail'] = None
+            columnas_reemplazo = {"direccion":"domicilio"}
+            
+        if categoria['categoria'] == 'museos':
+            df = df.drop(['cod_loc','idprovincia','iddepartamento','observaciones','categoria','subcategoria','provincia','localidad'], axis=1)
+            columnas_reemplazo = {'direccion':'domicilio',"cod_area":"cod_tel"}
+            
+                         
+        if categoria['categoria'] == 'bibliotecas':
             df = df.drop(["cod_localidad",	"id_departamento",	"observacion",	"categoria","subcategoria",	"provincia","departamento",	"localidad"], axis=1)
-
+            columnas_reemplazo = {"cod_area":"cod_tel"}             
+            
+        df = df.rename(columns= columnas_reemplazo)
+        log.info(df.columns)
         df.to_sql(categoria['categoria'], con=engine, if_exists='append', index=False)
         log.info(f"Se han insertado {len(df)} filas en la tabla {categoria['categoria']}")
     
