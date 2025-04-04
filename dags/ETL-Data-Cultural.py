@@ -97,7 +97,8 @@ def load_to_db_espacios_culturales(**context):
     log.info('fecha_a_procesar_str: ' + fecha_a_procesar_str)
     ti = context["task_instance"]    
     categorias_data = ti.xcom_pull(task_ids='get_last_data', key='db_fechas') 
-    
+    ruta = Variable.get("data_path") #/opt/airflow/data/
+
     hook = PostgresHook('data_db')       
     pg_uri = hook.get_uri()
     engine = create_engine(pg_uri)
@@ -108,7 +109,18 @@ def load_to_db_espacios_culturales(**context):
         df = pd.read_sql_query(sql=query, con=engine)        
         log.info(categoria['categoria'])        
         df.to_sql('espacios_culturales',con=engine, if_exists='append', index=False)
-
+    
+    query=f"""select p.descripcion as provincia,c2.cant_habitantes, l.descripcion as localidad, c.descripcion as categoria, ec.nombre, ec.domicilio, ec.cp, ec.latitud, ec.longitud, ec.telefono, ec.mail, ec.web
+                from public.espacios_culturales ec   
+                join localidades l on ec.id_localidad = l.id
+                join provincias p  on l.id_provincia = p.id 
+                join categorias c  on ec.id_categoria = c.id
+                join censo c2 on p.id = c2.id_provincia 
+                where ec.creado = '{fecha_a_procesar_str}'
+                """
+    df = pd.read_sql_query(query, con=engine)
+    df.to_excel(f"{ruta}espacios_culturales_{fecha_a_procesar_str}.xlsx", index=False)
+    log.info(f"Se genero el archivo {ruta}espacios_culturales_{fecha_a_procesar_str}.xlsx")
 
 
 def insights_cines(**context):
